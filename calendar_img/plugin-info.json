@@ -1,0 +1,6 @@
+{
+    "display_name": "Calendar Img",
+    "id": "calendar_img",
+    "class": "CalendarImgPlugin",
+    "repository": "https://github.com/jirisliz/InkyPi_CalendarImg"
+}
