@@ -1,6 +1,0 @@
-{
-    "display_name": "Calendar ToDo",
-    "id": "calendar_todo",
-    "class": "CalendarTodoPlugin",
-    "repository": "https://github.com/jirisliz/InkyPi_CalendarToDo"
-}
