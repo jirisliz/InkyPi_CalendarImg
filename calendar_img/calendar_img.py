@@ -99,8 +99,8 @@ class CalendarImgPlugin(BasePlugin):
             events      = self._fetch_all_grid(ical_feeds, month_start, month_end)
 
         # ── Image slideshow ───────────────────────────────────────────
-        image_urls   = self._parse_image_urls(settings)
-        slide_img    = self._next_slide(image_urls, image_width, height, image_bg, settings)
+        images_b64   = self._parse_slide_images(settings)
+        slide_img    = self._next_slide(images_b64, image_width, height, image_bg)
 
         # ── Render ────────────────────────────────────────────────────
         if cal_style == "agenda":
@@ -238,35 +238,34 @@ class CalendarImgPlugin(BasePlugin):
     #  Image slideshow                                                     #
     # ------------------------------------------------------------------ #
 
-    def _parse_image_urls(self, settings):
+    def _parse_slide_images(self, settings):
         """
-        Parse image_urls JSON field — list of URL strings.
-        Falls back to legacy single image_url.
-        Returns [url, ...]
+        Parse uploaded images stored as base64 data-URIs in settings.
+        The JS encodes each selected file as a data:image/...;base64,... string
+        and stores the list as JSON in the 'slide_images' setting key.
+        Returns list of base64 data-URI strings.
         """
-        urls     = []
-        urls_json = settings.get("image_urls", "").strip()
-        if urls_json:
-            try:
-                parsed = json.loads(urls_json)
-                urls   = [u.strip() for u in parsed if u.strip()]
-            except Exception as e:
-                logger.warning(f"Could not parse image_urls JSON: {e}")
-        if not urls:
-            single = settings.get("image_url", "").strip()
-            if single:
-                urls = [single]
-        return urls
+        images_json = settings.get("slide_images", "").strip()
+        if not images_json:
+            return []
+        try:
+            parsed = json.loads(images_json)
+            return [s for s in parsed if s and s.startswith("data:image")]
+        except Exception as e:
+            logger.warning(f"Could not parse slide_images: {e}")
+            return []
 
-    def _next_slide(self, image_urls, width, height, bg_color, settings):
+    def _next_slide(self, images_b64, width, height, bg_color):
         """
-        Pick the next image from the list using a persistent counter
-        stored in the plugin's state directory (or a hash-based fallback).
+        Pick the next image from the base64 list using a persistent index.
         Returns a PIL Image of exactly (width, height).
         """
+        import base64
+        from io import BytesIO
+
         blank = Image.new("RGB", (width, height), bg_color)
 
-        if not image_urls:
+        if not images_b64:
             draw = ImageDraw.Draw(blank)
             try:
                 font_dir = os.path.join(os.path.dirname(__file__),
@@ -276,7 +275,7 @@ class CalendarImgPlugin(BasePlugin):
             except Exception:
                 font = ImageFont.load_default()
             draw.text((width // 2, height // 2),
-                      "No images added", font=font,
+                      "No images uploaded", font=font,
                       fill=(180, 180, 180), anchor="mm")
             return blank
 
@@ -288,8 +287,8 @@ class CalendarImgPlugin(BasePlugin):
         except Exception:
             idx = 0
 
-        idx = idx % len(image_urls)
-        next_idx = (idx + 1) % len(image_urls)
+        idx      = idx % len(images_b64)
+        next_idx = (idx + 1) % len(images_b64)
 
         try:
             with open(state_path, "w") as f:
@@ -297,28 +296,25 @@ class CalendarImgPlugin(BasePlugin):
         except Exception as e:
             logger.warning(f"Could not save slide index: {e}")
 
-        url = image_urls[idx]
-        logger.info(f"[calendar_todo] Slideshow: showing image {idx + 1}/{len(image_urls)}: {url}")
+        logger.info(f"[calendar_img] Slideshow: image {idx + 1}/{len(images_b64)}")
 
         try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            from io import BytesIO
-            img = Image.open(BytesIO(resp.content)).convert("RGB")
+            data_uri = images_b64[idx]
+            # data:image/jpeg;base64,/9j/4AA...
+            header, b64data = data_uri.split(",", 1)
+            raw = base64.b64decode(b64data)
+            img = Image.open(BytesIO(raw)).convert("RGB")
         except Exception as e:
-            logger.warning(f"Could not load image {url}: {e}")
+            logger.warning(f"Could not decode image {idx}: {e}")
             draw = ImageDraw.Draw(blank)
             draw.text((width // 2, height // 2),
-                      f"Image load failed:\n{e}", fill=(200, 80, 80),
-                      anchor="mm")
+                      "Image decode failed", fill=(200, 80, 80), anchor="mm")
             return blank
 
-        # Fit image into the panel preserving aspect ratio; fill remainder with bg
+        # Fit preserving aspect ratio; letterbox with bg_color
         img.thumbnail((width, height), Image.LANCZOS)
         panel = Image.new("RGB", (width, height), bg_color)
-        x = (width  - img.width)  // 2
-        y = (height - img.height) // 2
-        panel.paste(img, (x, y))
+        panel.paste(img, ((width - img.width) // 2, (height - img.height) // 2))
         return panel
 
     # ------------------------------------------------------------------ #

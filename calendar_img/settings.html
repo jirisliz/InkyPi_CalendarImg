@@ -56,14 +56,26 @@
 <div class="mb-3">
     <label class="form-label fw-semibold">🖼 Image slideshow</label>
     <small class="text-muted d-block mb-2">
-        Add image URLs (direct links to .jpg / .png / .gif files).
-        Each refresh cycles to the next image.
+        Upload images from your computer (.jpg, .png, .gif, .webp).
+        Each refresh of the display cycles to the next image.
+        Images are stored in the plugin settings.
     </small>
-    <div id="image_list"></div>
-    <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addImage()">
-        + Add image
-    </button>
-    <input type="hidden" id="image_urls" name="image_urls" value="[]">
+
+    <!-- Uploaded image thumbnails + remove buttons -->
+    <div id="slide_thumbs" class="d-flex flex-wrap gap-2 mb-2"></div>
+
+    <!-- File picker (multiple) -->
+    <div class="d-flex align-items-center gap-2">
+        <label class="btn btn-sm btn-outline-primary mb-0" style="cursor:pointer">
+            + Add images
+            <input type="file" id="slide_file_input" accept="image/*" multiple
+                   style="display:none" onchange="onFilesSelected(this.files)">
+        </label>
+        <small class="text-muted" id="slide_count_label">0 images</small>
+    </div>
+
+    <!-- Hidden field holding JSON array of base64 data-URIs -->
+    <input type="hidden" id="slide_images" name="slide_images" value="[]">
 </div>
 
 <hr>
@@ -249,32 +261,56 @@ function saveFeeds() {
     document.getElementById('ical_url').value = feeds.length ? (feeds[0].url||'') : '';
 }
 
-/* ── Image URLs ── */
-var images = [];
+/* ── Image slideshow (base64 uploads) ── */
+var slideImages = [];   // array of data-URI strings
 
-function renderImages() {
-    var container = document.getElementById('image_list');
+function renderThumbs() {
+    var container = document.getElementById('slide_thumbs');
     container.innerHTML = '';
-    images.forEach(function(url, i) {
-        var row = document.createElement('div');
-        row.className = 'border rounded p-2 mb-2';
-        row.innerHTML =
-            '<div class="row g-2 align-items-center">' +
-            '  <div class="col"><input type="url" class="form-control form-control-sm"' +
-            '       placeholder="https://example.com/photo.jpg"' +
-            '       value="' + esc(url) + '"' +
-            '       onchange="images['+i+']=this.value;saveImages()"></div>' +
-            '  <div class="col-auto"><button type="button" class="btn btn-sm btn-outline-danger"' +
-            '       onclick="removeImage('+i+')">✕</button></div>' +
-            '</div>';
-        container.appendChild(row);
+    slideImages.forEach(function(dataUri, i) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'position:relative;display:inline-block';
+        var img = document.createElement('img');
+        img.src = dataUri;
+        img.style.cssText = 'width:80px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ccc';
+        img.title = 'Image ' + (i+1);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '✕';
+        btn.style.cssText = 'position:absolute;top:2px;right:2px;padding:0 4px;font-size:11px;' +
+            'line-height:16px;background:rgba(220,53,69,0.85);color:#fff;border:none;' +
+            'border-radius:3px;cursor:pointer';
+        btn.onclick = function() { removeSlide(i); };
+        wrap.appendChild(img);
+        wrap.appendChild(btn);
+        container.appendChild(wrap);
     });
-    saveImages();
+    document.getElementById('slide_count_label').textContent =
+        slideImages.length + ' image' + (slideImages.length !== 1 ? 's' : '');
+    saveSlides();
 }
-function addImage()      { images.push(''); renderImages(); }
-function removeImage(i)  { images.splice(i,1); renderImages(); }
-function saveImages() {
-    document.getElementById('image_urls').value = JSON.stringify(images);
+
+function onFilesSelected(files) {
+    var remaining = Array.from(files);
+    function readNext() {
+        if (!remaining.length) { renderThumbs(); return; }
+        var file = remaining.shift();
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            slideImages.push(e.target.result);
+            readNext();
+        };
+        reader.readAsDataURL(file);
+    }
+    readNext();
+    /* reset so the same file can be re-selected */
+    document.getElementById('slide_file_input').value = '';
+}
+
+function removeSlide(i) { slideImages.splice(i,1); renderThumbs(); }
+
+function saveSlides() {
+    document.getElementById('slide_images').value = JSON.stringify(slideImages);
 }
 
 /* ── Helpers ── */
@@ -329,13 +365,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (!feeds.length) addFeed(); else renderFeeds();
 
-        /* images */
+        /* slide images */
         try {
-            var pi = JSON.parse(pluginSettings.image_urls || '[]');
-            if (pi.length > 0) { images = pi; }
+            var si = JSON.parse(pluginSettings.slide_images || '[]');
+            if (si.length > 0) { slideImages = si; }
         } catch(e) {}
-        if (!images.length && pluginSettings.image_url) images = [pluginSettings.image_url];
-        renderImages();
+        renderThumbs();
     } else {
         addFeed();
     }
