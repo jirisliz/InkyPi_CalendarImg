@@ -1,19 +1,19 @@
-import hashlib
 import json
 import logging
 import os
+import base64
+from io import BytesIO
 from datetime import datetime, date, timedelta
 
 import requests
 from icalendar import Calendar
 import recurring_ical_events
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 
 from plugins.base_plugin.base_plugin import BasePlugin
 
 logger = logging.getLogger(__name__)
 
-# Full day/month names
 DAY_FULL_CS   = ["", "Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", "Neděle"]
 DAY_FULL_EN   = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MONTH_FULL_CS = ["", "Leden", "Únor", "Březen", "Duben", "Květen", "Červen",
@@ -44,8 +44,10 @@ class CalendarImgPlugin(BasePlugin):
     """
     Landscape split-screen InkyPi plugin.
     Left : monthly calendar grid OR agenda list (multiple iCal feeds, per-feed colours).
-    Right: image slideshow — cycles through uploaded images on each refresh.
-    Split ratio is configurable as a percentage.
+    Right: image slideshow — images uploaded via the settings form, cycles on each refresh.
+    Split ratio configurable as a percentage.
+    Images are stored using the same image_N key convention as InkyPi's built-in
+    image_upload plugin: image_0, image_1, image_2, ... as base64 data-URIs.
     """
 
     # ------------------------------------------------------------------ #
@@ -55,18 +57,15 @@ class CalendarImgPlugin(BasePlugin):
     def generate_image(self, settings, device_config):
         width, height = device_config.get_resolution()
 
-        # Calendar width as a percentage (default 65 %)
-        cal_pct       = max(10, min(90, int(settings.get("cal_pct", 65))))
+        cal_pct        = max(10, min(90, int(settings.get("cal_pct", 65))))
         calendar_width = int(width * cal_pct / 100)
         image_width    = width - calendar_width
 
-        # ── Calendar settings ─────────────────────────────────────────
-        cal_style   = settings.get("cal_style",  "grid")
+        cal_style   = settings.get("cal_style",   "grid")
         font_size   = int(settings.get("font_size", 14))
         agenda_days = int(settings.get("agenda_days", 14))
         language    = settings.get("language", "en")
 
-        # ── Colour settings ───────────────────────────────────────────
         cal_bg          = hex_to_rgb(settings.get("cal_bg",          "#FFFFFF"), (255, 255, 255))
         cal_text        = hex_to_rgb(settings.get("cal_text",        "#000000"), (0,   0,   0  ))
         cal_header_bg   = hex_to_rgb(settings.get("cal_header_bg",   "#000000"), (0,   0,   0  ))
@@ -80,7 +79,6 @@ class CalendarImgPlugin(BasePlugin):
             divider_color=divider_color,
         )
 
-        # ── iCal feeds ────────────────────────────────────────────────
         ical_feeds = self._parse_ical_feeds(settings)
         if not ical_feeds:
             raise RuntimeError(
@@ -98,11 +96,10 @@ class CalendarImgPlugin(BasePlugin):
             month_end   = next_month - timedelta(days=1)
             events      = self._fetch_all_grid(ical_feeds, month_start, month_end)
 
-        # ── Image slideshow ───────────────────────────────────────────
-        images_b64   = self._parse_slide_images(settings)
-        slide_img    = self._next_slide(images_b64, image_width, height, image_bg)
+        # Collect images: image_0, image_1, ... (same as InkyPi image_upload plugin)
+        images    = self._collect_images(settings)
+        slide_img = self._next_slide(images, image_width, height, image_bg)
 
-        # ── Render ────────────────────────────────────────────────────
         if cal_style == "agenda":
             cal_img = self._render_agenda(
                 calendar_width, height, today, events, font_size, language, colors
@@ -114,7 +111,7 @@ class CalendarImgPlugin(BasePlugin):
             )
 
         canvas = Image.new("RGB", (width, height), "white")
-        canvas.paste(cal_img,  (0, 0))
+        canvas.paste(cal_img,   (0, 0))
         canvas.paste(slide_img, (calendar_width, 0))
 
         draw = ImageDraw.Draw(canvas)
@@ -123,18 +120,12 @@ class CalendarImgPlugin(BasePlugin):
         return canvas
 
     # ------------------------------------------------------------------ #
-    #  iCal feed parsing                                                   #
+    #  iCal feeds                                                          #
     # ------------------------------------------------------------------ #
 
     def _parse_ical_feeds(self, settings):
-        """
-        Parse ical_feeds JSON field.
-        Falls back to legacy single ical_url.
-        Returns [{url, border_rgb, fill_rgb, name}, ...]
-        """
-        feeds     = []
+        feeds      = []
         feeds_json = settings.get("ical_feeds", "").strip()
-
         if feeds_json:
             try:
                 for i, entry in enumerate(json.loads(feeds_json)):
@@ -150,8 +141,6 @@ class CalendarImgPlugin(BasePlugin):
                     })
             except Exception as e:
                 logger.warning(f"Could not parse ical_feeds JSON: {e}")
-
-        # Legacy single URL fallback
         if not feeds:
             url = settings.get("ical_url", "").strip()
             if url:
@@ -173,7 +162,6 @@ class CalendarImgPlugin(BasePlugin):
             raise RuntimeError(f"Failed to fetch calendar ({url}): {e}")
 
     def _fetch_all_grid(self, feeds, start, end):
-        """Return {date: [{"summary", "border_rgb", "fill_rgb"}, ...]}"""
         result = {}
         for feed in feeds:
             try:
@@ -197,7 +185,6 @@ class CalendarImgPlugin(BasePlugin):
         return result
 
     def _fetch_all_agenda(self, feeds, start, end):
-        """Return sorted list of event dicts."""
         result = []
         for feed in feeds:
             try:
@@ -236,36 +223,36 @@ class CalendarImgPlugin(BasePlugin):
 
     # ------------------------------------------------------------------ #
     #  Image slideshow                                                     #
+    #  Mirrors InkyPi image_upload plugin: one settings key per image     #
+    #  image_0 = "data:image/jpeg;base64,..."                             #
+    #  image_1 = "data:image/jpeg;base64,..."  etc.                       #
     # ------------------------------------------------------------------ #
 
-    def _parse_slide_images(self, settings):
+    def _collect_images(self, settings):
         """
-        Parse uploaded images stored as base64 data-URIs in settings.
-        The JS encodes each selected file as a data:image/...;base64,... string
-        and stores the list as JSON in the 'slide_images' setting key.
-        Returns list of base64 data-URI strings.
+        Read image_0, image_1, image_2, ... from settings until a key is missing.
+        Returns a list of base64 data-URI strings.
         """
-        images_json = settings.get("slide_images", "").strip()
-        if not images_json:
-            return []
-        try:
-            parsed = json.loads(images_json)
-            return [s for s in parsed if s and s.startswith("data:image")]
-        except Exception as e:
-            logger.warning(f"Could not parse slide_images: {e}")
-            return []
+        images = []
+        i = 0
+        while True:
+            val = settings.get(f"image_{i}", "")
+            if not val:
+                break
+            images.append(val)
+            i += 1
+        logger.info(f"[calendar_img] {len(images)} slide image(s) loaded")
+        return images
 
-    def _next_slide(self, images_b64, width, height, bg_color):
+    def _next_slide(self, images, width, height, bg_color):
         """
-        Pick the next image from the base64 list using a persistent index.
+        Pick the next image using a persistent .slide_index counter.
+        Decodes the base64 data-URI and fits the image into the panel.
         Returns a PIL Image of exactly (width, height).
         """
-        import base64
-        from io import BytesIO
-
         blank = Image.new("RGB", (width, height), bg_color)
 
-        if not images_b64:
+        if not images:
             draw = ImageDraw.Draw(blank)
             try:
                 font_dir = os.path.join(os.path.dirname(__file__),
@@ -279,7 +266,6 @@ class CalendarImgPlugin(BasePlugin):
                       fill=(180, 180, 180), anchor="mm")
             return blank
 
-        # Persistent slide index stored next to the plugin file
         state_path = os.path.join(os.path.dirname(__file__), ".slide_index")
         try:
             with open(state_path) as f:
@@ -287,25 +273,24 @@ class CalendarImgPlugin(BasePlugin):
         except Exception:
             idx = 0
 
-        idx      = idx % len(images_b64)
-        next_idx = (idx + 1) % len(images_b64)
+        idx      = idx % len(images)
+        next_idx = (idx + 1) % len(images)
 
         try:
             with open(state_path, "w") as f:
                 f.write(str(next_idx))
         except Exception as e:
-            logger.warning(f"Could not save slide index: {e}")
+            logger.warning(f"[calendar_img] Could not save slide index: {e}")
 
-        logger.info(f"[calendar_img] Slideshow: image {idx + 1}/{len(images_b64)}")
+        logger.info(f"[calendar_img] Showing slide {idx + 1}/{len(images)}")
 
         try:
-            data_uri = images_b64[idx]
-            # data:image/jpeg;base64,/9j/4AA...
-            header, b64data = data_uri.split(",", 1)
+            data_uri = images[idx]
+            _, b64data = data_uri.split(",", 1)
             raw = base64.b64decode(b64data)
             img = Image.open(BytesIO(raw)).convert("RGB")
         except Exception as e:
-            logger.warning(f"Could not decode image {idx}: {e}")
+            logger.warning(f"[calendar_img] Could not decode image {idx}: {e}")
             draw = ImageDraw.Draw(blank)
             draw.text((width // 2, height // 2),
                       "Image decode failed", fill=(200, 80, 80), anchor="mm")
@@ -377,11 +362,9 @@ class CalendarImgPlugin(BasePlugin):
         padding   = 10
         y         = padding
 
-        # Month header bar
-        if language == "cs":
-            header = f"{MONTH_FULL_CS[month_start.month]} {month_start.year}"
-        else:
-            header = f"{MONTH_FULL_EN[month_start.month]} {month_start.year}"
+        header = (f"{MONTH_FULL_CS[month_start.month]} {month_start.year}"
+                  if language == "cs"
+                  else f"{MONTH_FULL_EN[month_start.month]} {month_start.year}")
 
         hdr_h = font_size + 12
         draw.rectangle([0, y, width, y + hdr_h], fill=hdr_bg)
@@ -389,7 +372,6 @@ class CalendarImgPlugin(BasePlugin):
                   font=bold, fill=hdr_fg, anchor="mm")
         y += hdr_h + 4
 
-        # Day-of-week header row
         col_w = (width - 2 * padding) // 7
         for i, name in enumerate(day_short):
             x = padding + i * col_w + col_w // 2
@@ -399,7 +381,6 @@ class CalendarImgPlugin(BasePlugin):
         draw.line([(padding, y), (width - padding, y)], fill=fg, width=1)
         y += 4
 
-        # Grid
         available_h = height - y - padding
         row_h       = max(font_size + 10, available_h // 6)
         col         = month_start.weekday()
@@ -421,7 +402,6 @@ class CalendarImgPlugin(BasePlugin):
                 (cell_x + col_w // 2, row_y + font_size // 2 + 2),
                 str(current.day), font=medium, fill=num_color, anchor="mm")
 
-            # Event pills (up to 2 per cell)
             if current in events:
                 ey = row_y + font_size + 6
                 for ev in events[current][:2]:
@@ -475,7 +455,6 @@ class CalendarImgPlugin(BasePlugin):
         time_w        = sample_time_w + pill_pad_x
         summary_x     = indent + time_w + pill_pad_x + 4
 
-        # Panel header
         header = "Nadcházející události" if language == "cs" else "Upcoming events"
         hdr_h  = font_size + 12
         draw.rectangle([0, y, width, y + hdr_h], fill=hdr_bg)
@@ -492,7 +471,6 @@ class CalendarImgPlugin(BasePlugin):
         pill_h    = font_size + pill_pad_y * 2
 
         for ev in events:
-            # Day header
             if ev["date"] != last_date:
                 if last_date is not None:
                     y += sep_gap
@@ -506,15 +484,13 @@ class CalendarImgPlugin(BasePlugin):
                     break
 
                 d = ev["date"]
-                if language == "cs":
-                    label = f"{DAY_FULL_CS[d.isoweekday()]}  {d.day}. {MONTH_FULL_CS[d.month]}"
-                else:
-                    label = f"{DAY_FULL_EN[d.weekday()]}  {d.day} {MONTH_FULL_EN[d.month]}"
+                label = (f"{DAY_FULL_CS[d.isoweekday()]}  {d.day}. {MONTH_FULL_CS[d.month]}"
+                         if language == "cs"
+                         else f"{DAY_FULL_EN[d.weekday()]}  {d.day} {MONTH_FULL_EN[d.month]}")
 
                 if d == today:
                     draw.rectangle(
-                        [padding-2, y, width-padding, y+date_h-2],
-                        fill=hdr_bg)
+                        [padding-2, y, width-padding, y+date_h-2], fill=hdr_bg)
                     draw.text((padding+4, y + date_h // 2), label,
                               font=bold, fill=hdr_fg, anchor="lm")
                 else:
@@ -524,7 +500,6 @@ class CalendarImgPlugin(BasePlugin):
                 y        += date_h
                 last_date = ev["date"]
 
-            # Event pill
             if y + pill_h + pill_pad_y > height - padding:
                 break
 

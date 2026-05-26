@@ -56,16 +56,18 @@
 <div class="mb-3">
     <label class="form-label fw-semibold">🖼 Image slideshow</label>
     <small class="text-muted d-block mb-2">
-        Upload images from your computer (.jpg, .png, .gif, .webp).
-        Each refresh of the display cycles to the next image.
-        Images are stored in the plugin settings.
+        Upload images from your PC (.jpg, .png, .gif, .webp).
+        Each display refresh cycles to the next image automatically.
     </small>
 
-    <!-- Uploaded image thumbnails + remove buttons -->
+    <!-- Thumbnail strip of uploaded images -->
     <div id="slide_thumbs" class="d-flex flex-wrap gap-2 mb-2"></div>
 
-    <!-- File picker (multiple) -->
-    <div class="d-flex align-items-center gap-2">
+    <!-- Hidden form fields: image_0, image_1, ... — same as InkyPi image_upload plugin -->
+    <div id="slide_fields"></div>
+
+    <!-- File picker -->
+    <div class="d-flex align-items-center gap-3">
         <label class="btn btn-sm btn-outline-primary mb-0" style="cursor:pointer">
             + Add images
             <input type="file" id="slide_file_input" accept="image/*" multiple
@@ -73,9 +75,6 @@
         </label>
         <small class="text-muted" id="slide_count_label">0 images</small>
     </div>
-
-    <!-- Hidden field holding JSON array of base64 data-URIs -->
-    <input type="hidden" id="slide_images" name="slide_images" value="[]">
 </div>
 
 <hr>
@@ -83,15 +82,16 @@
 <!-- ===== Split ratio ===== -->
 <div class="mb-3">
     <label class="form-label fw-semibold">
-        Calendar width &nbsp;<span id="cal_pct_val">65</span>% &nbsp;·&nbsp;
-        Image width <span id="img_pct_val">35</span>%
+        Calendar width: <span id="cal_pct_val">65</span>%
+        &nbsp;·&nbsp;
+        Image width: <span id="img_pct_val">35</span>%
     </label>
     <input type="range" class="form-range" id="cal_pct" name="cal_pct"
            min="20" max="85" step="5" value="65"
            oninput="updateSplitLabel(this.value)">
     <div class="d-flex justify-content-between">
-        <small class="text-muted">More image ←</small>
-        <small class="text-muted">→ More calendar</small>
+        <small class="text-muted">← More image</small>
+        <small class="text-muted">More calendar →</small>
     </div>
 </div>
 
@@ -99,9 +99,7 @@
 
 <!-- ===== Colours ===== -->
 <h6 class="mb-1">🎨 Colours</h6>
-<small class="text-muted d-block mb-3">
-    Calendar event pill colours are set per-feed above.
-</small>
+<small class="text-muted d-block mb-3">Calendar event pill colours are set per-feed above.</small>
 
 <div class="row g-3 mb-3">
     <div class="col-6 col-md-3">
@@ -148,7 +146,6 @@
     </div>
 </div>
 
-<!-- Quick presets -->
 <div class="mb-3">
     <label class="form-label small fw-semibold">Quick presets</label><br>
     <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="applyPreset('default')">⬜ Default</button>
@@ -159,14 +156,7 @@
 
 <!-- ===== Script ===== -->
 <script>
-var DEFAULT_FEED_COLORS = [
-    {border:'#FBBD02', fill:'#FFF2AD'},
-    {border:'#1A73E8', fill:'#D2E8FB'},
-    {border:'#34A853', fill:'#D4EDDA'},
-    {border:'#EA4335', fill:'#FCDBD9'},
-    {border:'#9C27B0', fill:'#EAD5F5'},
-];
-
+/* ═══ Colour helpers ═══════════════════════════════════════════════════ */
 var PRESETS = {
     default: {cal_bg:'#FFFFFF', cal_text:'#000000', cal_header_bg:'#000000',
               cal_header_text:'#FFFFFF', image_bg:'#000000', divider_color:'#000000'},
@@ -177,7 +167,6 @@ var PRESETS = {
     blue:    {cal_bg:'#E8F4FD', cal_text:'#0A2540', cal_header_bg:'#1A73E8',
               cal_header_text:'#FFFFFF', image_bg:'#0A2540', divider_color:'#1A73E8'},
 };
-
 var COLOR_FIELDS = ['cal_bg','cal_text','cal_header_bg','cal_header_text',
                     'image_bg','divider_color'];
 
@@ -205,50 +194,56 @@ COLOR_FIELDS.forEach(function(id) {
     if (p) p.addEventListener('input', function() { syncFromPicker(id); });
 });
 
+/* ═══ Split ratio ══════════════════════════════════════════════════════ */
 function updateSplitLabel(v) {
     document.getElementById('cal_pct_val').textContent = v;
     document.getElementById('img_pct_val').textContent = 100 - parseInt(v);
 }
 
-/* ── Calendar feeds ── */
+/* ═══ Calendar feeds ═══════════════════════════════════════════════════ */
+var DEFAULT_FEED_COLORS = [
+    {border:'#FBBD02', fill:'#FFF2AD'},
+    {border:'#1A73E8', fill:'#D2E8FB'},
+    {border:'#34A853', fill:'#D4EDDA'},
+    {border:'#EA4335', fill:'#FCDBD9'},
+    {border:'#9C27B0', fill:'#EAD5F5'},
+];
 var feeds = [];
 
 function renderFeeds() {
-    var container = document.getElementById('feed_list');
-    container.innerHTML = '';
+    var c = document.getElementById('feed_list');
+    c.innerHTML = '';
     feeds.forEach(function(feed, i) {
         var def = DEFAULT_FEED_COLORS[i % DEFAULT_FEED_COLORS.length];
         var row = document.createElement('div');
         row.className = 'border rounded p-2 mb-2';
         row.innerHTML =
             '<div class="row g-2 align-items-end">' +
-            '  <div class="col-md-3"><label class="form-label small mb-1">Name</label>' +
-            '    <input type="text" class="form-control form-control-sm" placeholder="My calendar"' +
-            '           value="' + esc(feed.name||'') + '"' +
-            '           onchange="feeds['+i+'].name=this.value;saveFeeds()"></div>' +
-            '  <div class="col-md-5"><label class="form-label small mb-1">iCal URL</label>' +
-            '    <input type="url" class="form-control form-control-sm" placeholder="https://..."' +
-            '           value="' + esc(feed.url||'') + '"' +
-            '           onchange="feeds['+i+'].url=this.value;saveFeeds()"></div>' +
-            '  <div class="col-auto"><label class="form-label small mb-1">Border</label>' +
-            '    <input type="color" class="form-control form-control-color form-control-sm"' +
-            '           value="' + (feed.border||def.border) + '"' +
-            '           oninput="feeds['+i+'].border=this.value;saveFeeds()"></div>' +
-            '  <div class="col-auto"><label class="form-label small mb-1">Fill</label>' +
-            '    <input type="color" class="form-control form-control-color form-control-sm"' +
-            '           value="' + (feed.fill||def.fill) + '"' +
-            '           oninput="feeds['+i+'].fill=this.value;saveFeeds()"></div>' +
-            '  <div class="col-auto">' +
-            '    <button type="button" class="btn btn-sm btn-outline-danger"' +
-            '            onclick="removeFeed('+i+')">✕</button></div>' +
-            '</div>';
-        container.appendChild(row);
+            '<div class="col-md-3"><label class="form-label small mb-1">Name</label>' +
+            '<input type="text" class="form-control form-control-sm" placeholder="My calendar"' +
+            ' value="' + esc(feed.name||'') + '"' +
+            ' onchange="feeds['+i+'].name=this.value;saveFeeds()"></div>' +
+            '<div class="col-md-5"><label class="form-label small mb-1">iCal URL</label>' +
+            '<input type="url" class="form-control form-control-sm" placeholder="https://..."' +
+            ' value="' + esc(feed.url||'') + '"' +
+            ' onchange="feeds['+i+'].url=this.value;saveFeeds()"></div>' +
+            '<div class="col-auto"><label class="form-label small mb-1">Border</label>' +
+            '<input type="color" class="form-control form-control-color form-control-sm"' +
+            ' value="' + (feed.border||def.border) + '"' +
+            ' oninput="feeds['+i+'].border=this.value;saveFeeds()"></div>' +
+            '<div class="col-auto"><label class="form-label small mb-1">Fill</label>' +
+            '<input type="color" class="form-control form-control-color form-control-sm"' +
+            ' value="' + (feed.fill||def.fill) + '"' +
+            ' oninput="feeds['+i+'].fill=this.value;saveFeeds()"></div>' +
+            '<div class="col-auto">' +
+            '<button type="button" class="btn btn-sm btn-outline-danger"' +
+            ' onclick="removeFeed('+i+')">✕</button></div></div>';
+        c.appendChild(row);
     });
     saveFeeds();
 }
-
 function addFeed() {
-    var i = feeds.length;
+    var i   = feeds.length;
     var def = DEFAULT_FEED_COLORS[i % DEFAULT_FEED_COLORS.length];
     feeds.push({url:'', name:'Calendar '+(i+1), border:def.border, fill:def.fill});
     renderFeeds();
@@ -261,8 +256,26 @@ function saveFeeds() {
     document.getElementById('ical_url').value = feeds.length ? (feeds[0].url||'') : '';
 }
 
-/* ── Image slideshow (base64 uploads) ── */
-var slideImages = [];   // array of data-URI strings
+/* ═══ Image slideshow ══════════════════════════════════════════════════
+   Images stored as individual form fields: image_0, image_1, image_2, ...
+   This mirrors the InkyPi image_upload plugin convention exactly.
+   Each field holds a base64 data-URI string.
+═══════════════════════════════════════════════════════════════════════ */
+var slideImages = [];   // array of base64 data-URI strings
+
+function rebuildImageFields() {
+    /* Re-create one hidden <input name="image_N"> per image */
+    var container = document.getElementById('slide_fields');
+    container.innerHTML = '';
+    slideImages.forEach(function(dataUri, i) {
+        var inp = document.createElement('input');
+        inp.type  = 'hidden';
+        inp.name  = 'image_' + i;
+        inp.id    = 'image_' + i;
+        inp.value = dataUri;
+        container.appendChild(inp);
+    });
+}
 
 function renderThumbs() {
     var container = document.getElementById('slide_thumbs');
@@ -270,31 +283,43 @@ function renderThumbs() {
     slideImages.forEach(function(dataUri, i) {
         var wrap = document.createElement('div');
         wrap.style.cssText = 'position:relative;display:inline-block';
+
         var img = document.createElement('img');
         img.src = dataUri;
-        img.style.cssText = 'width:80px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #ccc';
-        img.title = 'Image ' + (i+1);
+        img.style.cssText = 'width:80px;height:60px;object-fit:cover;' +
+                            'border-radius:4px;border:1px solid #ccc';
+        img.title = 'Image ' + (i + 1);
+
+        var num = document.createElement('div');
+        num.textContent = i + 1;
+        num.style.cssText = 'position:absolute;bottom:2px;left:4px;font-size:10px;' +
+                            'color:#fff;text-shadow:0 0 2px #000';
+
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = '✕';
-        btn.style.cssText = 'position:absolute;top:2px;right:2px;padding:0 4px;font-size:11px;' +
-            'line-height:16px;background:rgba(220,53,69,0.85);color:#fff;border:none;' +
-            'border-radius:3px;cursor:pointer';
-        btn.onclick = function() { removeSlide(i); };
+        btn.style.cssText = 'position:absolute;top:2px;right:2px;padding:0 4px;' +
+                            'font-size:11px;line-height:16px;background:rgba(220,53,69,0.85);' +
+                            'color:#fff;border:none;border-radius:3px;cursor:pointer';
+        btn.onclick = (function(idx) { return function() { removeSlide(idx); }; })(i);
+
         wrap.appendChild(img);
+        wrap.appendChild(num);
         wrap.appendChild(btn);
         container.appendChild(wrap);
     });
+
     document.getElementById('slide_count_label').textContent =
         slideImages.length + ' image' + (slideImages.length !== 1 ? 's' : '');
-    saveSlides();
+
+    rebuildImageFields();
 }
 
 function onFilesSelected(files) {
-    var remaining = Array.from(files);
+    var arr = Array.from(files);
     function readNext() {
-        if (!remaining.length) { renderThumbs(); return; }
-        var file = remaining.shift();
+        if (!arr.length) { renderThumbs(); return; }
+        var file   = arr.shift();
         var reader = new FileReader();
         reader.onload = function(e) {
             slideImages.push(e.target.result);
@@ -303,43 +328,42 @@ function onFilesSelected(files) {
         reader.readAsDataURL(file);
     }
     readNext();
-    /* reset so the same file can be re-selected */
+    /* reset so same file can be re-selected if needed */
     document.getElementById('slide_file_input').value = '';
 }
 
-function removeSlide(i) { slideImages.splice(i,1); renderThumbs(); }
+function removeSlide(i) { slideImages.splice(i, 1); renderThumbs(); }
 
-function saveSlides() {
-    document.getElementById('slide_images').value = JSON.stringify(slideImages);
-}
-
-/* ── Helpers ── */
+/* ═══ Misc helpers ═════════════════════════════════════════════════════ */
 function esc(s) {
     return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
                   .replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
 function updateCalStyle() {
     var v = document.getElementById('cal_style').value;
     document.getElementById('agenda_days_col').style.display = v==='agenda' ? '' : 'none';
 }
 document.getElementById('cal_style').addEventListener('change', updateCalStyle);
 
-/* ── Prepopulate on load ── */
+/* ═══ Prepopulate on load ══════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function() {
     if (loadPluginSettings) {
-        if (pluginSettings.agenda_days) document.getElementById('agenda_days').value = pluginSettings.agenda_days;
+        /* selects */
         if (pluginSettings.cal_style)   document.getElementById('cal_style').value   = pluginSettings.cal_style;
         if (pluginSettings.language)    document.getElementById('language').value    = pluginSettings.language;
+        if (pluginSettings.agenda_days) document.getElementById('agenda_days').value = pluginSettings.agenda_days;
 
+        /* font size */
         var fs = pluginSettings.font_size || '14';
         document.getElementById('font_size').value = fs;
         document.getElementById('font_size_val').textContent = fs + 'px';
 
+        /* split ratio */
         var pct = pluginSettings.cal_pct || '65';
         document.getElementById('cal_pct').value = pct;
         updateSplitLabel(pct);
 
+        /* colours */
         var colorDefaults = {cal_bg:'#FFFFFF', cal_text:'#000000',
             cal_header_bg:'#000000', cal_header_text:'#FFFFFF',
             image_bg:'#000000', divider_color:'#000000'};
@@ -347,32 +371,34 @@ document.addEventListener('DOMContentLoaded', function() {
             setColor(id, pluginSettings[id] || colorDefaults[id]);
         });
 
-        /* feeds */
+        /* calendar feeds */
         try {
             var pf = JSON.parse(pluginSettings.ical_feeds || '[]');
-            if (pf.length > 0) {
-                feeds = pf.map(function(f,i){
-                    var def = DEFAULT_FEED_COLORS[i % DEFAULT_FEED_COLORS.length];
-                    return {url:f.url||'', name:f.name||'Calendar '+(i+1),
-                            border:f.border||def.border, fill:f.fill||def.fill};
-                });
-            }
-        } catch(e) {}
-        if (!feeds.length && pluginSettings.ical_url) {
+            feeds = pf.length ? pf.map(function(f,i){
+                var def = DEFAULT_FEED_COLORS[i % DEFAULT_FEED_COLORS.length];
+                return {url:f.url||'', name:f.name||'Calendar '+(i+1),
+                        border:f.border||def.border, fill:f.fill||def.fill};
+            }) : [];
+        } catch(e) { feeds = []; }
+        if (!feeds.length && pluginSettings.ical_url)
             feeds.push({url:pluginSettings.ical_url, name:'Calendar 1',
                         border:DEFAULT_FEED_COLORS[0].border,
                         fill:DEFAULT_FEED_COLORS[0].fill});
-        }
         if (!feeds.length) addFeed(); else renderFeeds();
 
-        /* slide images */
-        try {
-            var si = JSON.parse(pluginSettings.slide_images || '[]');
-            if (si.length > 0) { slideImages = si; }
-        } catch(e) {}
+        /* images — read image_0, image_1, ... from pluginSettings */
+        slideImages = [];
+        var i = 0;
+        while (true) {
+            var val = pluginSettings['image_' + i];
+            if (!val) break;
+            slideImages.push(val);
+            i++;
+        }
         renderThumbs();
     } else {
         addFeed();
+        renderThumbs();
     }
     updateCalStyle();
 });

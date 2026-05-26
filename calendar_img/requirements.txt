@@ -1,5 +1,5 @@
-# calendar_todo plugin — Python dependencies
-# Install with:
+# calendar_img plugin dependencies
+# Install inside the InkyPi virtualenv:
 #   source /usr/local/inkypi/venv_inkypi/bin/activate
 #   pip install -r requirements.txt
 
