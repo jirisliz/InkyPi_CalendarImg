@@ -1,206 +1,130 @@
 <!-- ===== iCal feeds ===== -->
-<div class="mb-3">
+<div class="form-group">
     <label class="form-label fw-semibold">📅 Calendar feeds</label>
     <small class="text-muted d-block mb-2">
         Add one or more iCal URLs. Each calendar gets its own pill colour.
         Google Calendar: Settings → your calendar → <em>Secret address in iCal format</em>.
     </small>
     <div id="feed_list"></div>
-    <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addFeed()">
+    <button type="button" class="action-button" onclick="addFeed()" style="margin-top:8px">
         + Add calendar feed
     </button>
     <input type="hidden" id="ical_feeds" name="ical_feeds" value="[]">
     <input type="hidden" id="ical_url"   name="ical_url"   value="">
 </div>
 
-<hr>
-
 <!-- ===== Calendar style ===== -->
-<div class="row mb-3">
-    <div class="col">
-        <label class="form-label fw-semibold">Calendar style</label>
-        <select class="form-select" id="cal_style" name="cal_style">
-            <option value="grid">Monthly grid</option>
-            <option value="agenda">Agenda list (upcoming events)</option>
-        </select>
-    </div>
-    <div class="col" id="agenda_days_col" style="display:none">
-        <label class="form-label fw-semibold">Days ahead (agenda)</label>
-        <input type="number" class="form-control" id="agenda_days" name="agenda_days"
-               value="14" min="3" max="60">
-    </div>
+<div class="form-group">
+    <label class="form-label">Calendar style</label>
+    <select class="form-input" id="cal_style" name="cal_style">
+        <option value="grid">Monthly grid</option>
+        <option value="agenda">Agenda list (upcoming events)</option>
+    </select>
 </div>
 
-<div class="row mb-3">
-    <div class="col">
-        <label class="form-label fw-semibold">Language</label>
-        <select class="form-select" id="language" name="language">
-            <option value="en">English</option>
-            <option value="cs">Čeština</option>
-        </select>
-    </div>
-    <div class="col">
-        <label class="form-label fw-semibold">Font size</label>
-        <div class="d-flex align-items-center gap-3">
-            <input type="range" class="form-range flex-grow-1" id="font_size" name="font_size"
-                   min="10" max="28" step="1" value="14"
-                   oninput="document.getElementById('font_size_val').textContent = this.value + 'px'">
-            <span id="font_size_val" style="min-width:40px">14px</span>
-        </div>
-    </div>
+<div class="form-group" id="agenda_days_group" style="display:none">
+    <label class="form-label">Days ahead (agenda)</label>
+    <input type="number" class="form-input" id="agenda_days" name="agenda_days"
+           value="14" min="3" max="60">
 </div>
 
-<hr>
+<div class="form-group">
+    <label class="form-label">Language</label>
+    <select class="form-input" id="language" name="language">
+        <option value="en">English</option>
+        <option value="cs">Čeština</option>
+    </select>
+</div>
+
+<div class="form-group">
+    <label class="form-label">Font size</label>
+    <div style="display:flex;align-items:center;gap:12px">
+        <input type="range" id="font_size" name="font_size"
+               min="10" max="28" step="1" value="14"
+               style="flex:1"
+               oninput="document.getElementById('font_size_val').textContent = this.value + 'px'">
+        <span id="font_size_val">14px</span>
+    </div>
+</div>
 
 <!-- ===== Image slideshow ===== -->
-<div class="mb-3">
-    <label class="form-label fw-semibold">🖼 Image slideshow</label>
-    <small class="text-muted d-block mb-2">
+<div class="form-group">
+    <label class="form-label">🖼 Image slideshow</label>
+    <small class="text-muted d-block" style="margin-bottom:8px">
         Upload images from your PC (.jpg, .png, .gif, .webp).
         Each display refresh cycles to the next image automatically.
     </small>
 
-    <!-- Thumbnail strip of uploaded images -->
-    <div id="slide_thumbs" class="d-flex flex-wrap gap-2 mb-2"></div>
+    <!-- File picker — uses InkyPi's uploadedFiles global, same as image_upload plugin -->
+    <label for="imageUpload" class="form-input file-upload-label">Choose Images</label>
+    <input type="file" clear-on-submit id="imageUpload" name="imageFiles[]"
+           accept="image/*" multiple
+           class="file-upload-input" onchange="addSlideFiles()">
 
-    <!-- Hidden form fields: image_0, image_1, ... — same as InkyPi image_upload plugin -->
-    <div id="slide_fields"></div>
+    <!-- List of newly added + existing files -->
+    <div id="slideFileNames" class="file-name-list" style="margin-top:8px"></div>
 
-    <!-- File picker -->
-    <div class="d-flex align-items-center gap-3">
-        <label class="btn btn-sm btn-outline-primary mb-0" style="cursor:pointer">
-            + Add images
-            <input type="file" id="slide_file_input" accept="image/*" multiple
-                   style="display:none" onchange="onFilesSelected(this.files)">
-        </label>
-        <small class="text-muted" id="slide_count_label">0 images</small>
-    </div>
+    <!-- Hidden inputs for existing saved file paths (same pattern as image_upload) -->
+    <div id="slideHiddenInputs"></div>
 </div>
-
-<hr>
 
 <!-- ===== Split ratio ===== -->
-<div class="mb-3">
-    <label class="form-label fw-semibold">
+<div class="form-group">
+    <label class="form-label">
         Calendar width: <span id="cal_pct_val">65</span>%
-        &nbsp;·&nbsp;
-        Image width: <span id="img_pct_val">35</span>%
+        &nbsp;·&nbsp; Image width: <span id="img_pct_val">35</span>%
     </label>
-    <input type="range" class="form-range" id="cal_pct" name="cal_pct"
+    <input type="range" id="cal_pct" name="cal_pct"
            min="20" max="85" step="5" value="65"
+           style="width:100%"
            oninput="updateSplitLabel(this.value)">
-    <div class="d-flex justify-content-between">
-        <small class="text-muted">← More image</small>
-        <small class="text-muted">More calendar →</small>
-    </div>
 </div>
-
-<hr>
 
 <!-- ===== Colours ===== -->
-<h6 class="mb-1">🎨 Colours</h6>
-<small class="text-muted d-block mb-3">Calendar event pill colours are set per-feed above.</small>
+<div class="form-group">
+    <label class="form-label">🎨 Colours</label>
 
-<div class="row g-3 mb-3">
-    <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold">Calendar background</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="color" class="form-control form-control-color" id="cal_bg" name="cal_bg" value="#FFFFFF">
-            <input type="text"  class="form-control form-control-sm font-monospace" id="cal_bg_hex" maxlength="7" value="#FFFFFF" oninput="syncFromHex('cal_bg')">
-        </div>
+    <div class="form-group nowrap">
+        <label class="form-label">Calendar background</label>
+        <input type="color" id="cal_bg" name="cal_bg" value="#FFFFFF" class="color-picker">
     </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold">Calendar text</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="color" class="form-control form-control-color" id="cal_text" name="cal_text" value="#000000">
-            <input type="text"  class="form-control form-control-sm font-monospace" id="cal_text_hex" maxlength="7" value="#000000" oninput="syncFromHex('cal_text')">
-        </div>
+    <div class="form-group nowrap">
+        <label class="form-label">Calendar text</label>
+        <input type="color" id="cal_text" name="cal_text" value="#000000" class="color-picker">
     </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold">Header / today background</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="color" class="form-control form-control-color" id="cal_header_bg" name="cal_header_bg" value="#000000">
-            <input type="text"  class="form-control form-control-sm font-monospace" id="cal_header_bg_hex" maxlength="7" value="#000000" oninput="syncFromHex('cal_header_bg')">
-        </div>
+    <div class="form-group nowrap">
+        <label class="form-label">Header / today background</label>
+        <input type="color" id="cal_header_bg" name="cal_header_bg" value="#000000" class="color-picker">
     </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold">Header / today text</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="color" class="form-control form-control-color" id="cal_header_text" name="cal_header_text" value="#FFFFFF">
-            <input type="text"  class="form-control form-control-sm font-monospace" id="cal_header_text_hex" maxlength="7" value="#FFFFFF" oninput="syncFromHex('cal_header_text')">
-        </div>
+    <div class="form-group nowrap">
+        <label class="form-label">Header / today text</label>
+        <input type="color" id="cal_header_text" name="cal_header_text" value="#FFFFFF" class="color-picker">
     </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold">Image panel background</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="color" class="form-control form-control-color" id="image_bg" name="image_bg" value="#000000">
-            <input type="text"  class="form-control form-control-sm font-monospace" id="image_bg_hex" maxlength="7" value="#000000" oninput="syncFromHex('image_bg')">
-        </div>
+    <div class="form-group nowrap">
+        <label class="form-label">Image panel background</label>
+        <input type="color" id="image_bg" name="image_bg" value="#000000" class="color-picker">
     </div>
-    <div class="col-6 col-md-3">
-        <label class="form-label small fw-semibold">Divider line</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="color" class="form-control form-control-color" id="divider_color" name="divider_color" value="#000000">
-            <input type="text"  class="form-control form-control-sm font-monospace" id="divider_color_hex" maxlength="7" value="#000000" oninput="syncFromHex('divider_color')">
-        </div>
+    <div class="form-group nowrap">
+        <label class="form-label">Divider line</label>
+        <input type="color" id="divider_color" name="divider_color" value="#000000" class="color-picker">
     </div>
 </div>
 
-<div class="mb-3">
-    <label class="form-label small fw-semibold">Quick presets</label><br>
-    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="applyPreset('default')">⬜ Default</button>
-    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="applyPreset('dark')">⬛ Dark</button>
-    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="applyPreset('keep')">🟡 Keep yellow</button>
-    <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" onclick="applyPreset('blue')">🔵 Ocean blue</button>
-</div>
-
-<!-- ===== Script ===== -->
 <script>
-/* ═══ Colour helpers ═══════════════════════════════════════════════════ */
-var PRESETS = {
-    default: {cal_bg:'#FFFFFF', cal_text:'#000000', cal_header_bg:'#000000',
-              cal_header_text:'#FFFFFF', image_bg:'#000000', divider_color:'#000000'},
-    dark:    {cal_bg:'#1A1A1A', cal_text:'#EEEEEE', cal_header_bg:'#333333',
-              cal_header_text:'#FFFFFF', image_bg:'#111111', divider_color:'#555555'},
-    keep:    {cal_bg:'#FFF8E1', cal_text:'#3E2000', cal_header_bg:'#FBBD02',
-              cal_header_text:'#3E2000', image_bg:'#3E2000', divider_color:'#F5A800'},
-    blue:    {cal_bg:'#E8F4FD', cal_text:'#0A2540', cal_header_bg:'#1A73E8',
-              cal_header_text:'#FFFFFF', image_bg:'#0A2540', divider_color:'#1A73E8'},
-};
-var COLOR_FIELDS = ['cal_bg','cal_text','cal_header_bg','cal_header_text',
-                    'image_bg','divider_color'];
-
-function setColor(id, hex) {
-    var p = document.getElementById(id);
-    var h = document.getElementById(id + '_hex');
-    if (p) p.value = hex;
-    if (h) h.value = hex;
-}
-function syncFromPicker(id) {
-    var h = document.getElementById(id + '_hex');
-    if (h) h.value = document.getElementById(id).value;
-}
-function syncFromHex(id) {
-    var h = document.getElementById(id + '_hex');
-    var p = document.getElementById(id);
-    if (/^#[0-9A-Fa-f]{6}$/.test(h.value) && p) p.value = h.value;
-}
-function applyPreset(name) {
-    var p = PRESETS[name]; if (!p) return;
-    COLOR_FIELDS.forEach(function(id) { if (p[id]) setColor(id, p[id]); });
-}
-COLOR_FIELDS.forEach(function(id) {
-    var p = document.getElementById(id);
-    if (p) p.addEventListener('input', function() { syncFromPicker(id); });
-});
-
-/* ═══ Split ratio ══════════════════════════════════════════════════════ */
+/* ═══ Split ratio label ═══════════════════════════════════════════════ */
 function updateSplitLabel(v) {
     document.getElementById('cal_pct_val').textContent = v;
     document.getElementById('img_pct_val').textContent = 100 - parseInt(v);
 }
 
-/* ═══ Calendar feeds ═══════════════════════════════════════════════════ */
+/* ═══ Calendar style toggle ═══════════════════════════════════════════ */
+function updateCalStyle() {
+    var v = document.getElementById('cal_style').value;
+    document.getElementById('agenda_days_group').style.display = v === 'agenda' ? '' : 'none';
+}
+document.getElementById('cal_style').addEventListener('change', updateCalStyle);
+
+/* ═══ Calendar feeds ══════════════════════════════════════════════════ */
 var DEFAULT_FEED_COLORS = [
     {border:'#FBBD02', fill:'#FFF2AD'},
     {border:'#1A73E8', fill:'#D2E8FB'},
@@ -216,34 +140,33 @@ function renderFeeds() {
     feeds.forEach(function(feed, i) {
         var def = DEFAULT_FEED_COLORS[i % DEFAULT_FEED_COLORS.length];
         var row = document.createElement('div');
-        row.className = 'border rounded p-2 mb-2';
+        row.style.cssText = 'border:1px solid #ccc;border-radius:4px;padding:8px;margin-bottom:6px';
         row.innerHTML =
-            '<div class="row g-2 align-items-end">' +
-            '<div class="col-md-3"><label class="form-label small mb-1">Name</label>' +
-            '<input type="text" class="form-control form-control-sm" placeholder="My calendar"' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end">' +
+            '<div><label style="font-size:12px;display:block">Name</label>' +
+            '<input type="text" class="form-input" style="width:120px" placeholder="My calendar"' +
             ' value="' + esc(feed.name||'') + '"' +
             ' onchange="feeds['+i+'].name=this.value;saveFeeds()"></div>' +
-            '<div class="col-md-5"><label class="form-label small mb-1">iCal URL</label>' +
-            '<input type="url" class="form-control form-control-sm" placeholder="https://..."' +
+            '<div style="flex:1;min-width:200px"><label style="font-size:12px;display:block">iCal URL</label>' +
+            '<input type="url" class="form-input" placeholder="https://..."' +
             ' value="' + esc(feed.url||'') + '"' +
             ' onchange="feeds['+i+'].url=this.value;saveFeeds()"></div>' +
-            '<div class="col-auto"><label class="form-label small mb-1">Border</label>' +
-            '<input type="color" class="form-control form-control-color form-control-sm"' +
+            '<div><label style="font-size:12px;display:block">Border</label>' +
+            '<input type="color" class="color-picker"' +
             ' value="' + (feed.border||def.border) + '"' +
             ' oninput="feeds['+i+'].border=this.value;saveFeeds()"></div>' +
-            '<div class="col-auto"><label class="form-label small mb-1">Fill</label>' +
-            '<input type="color" class="form-control form-control-color form-control-sm"' +
+            '<div><label style="font-size:12px;display:block">Fill</label>' +
+            '<input type="color" class="color-picker"' +
             ' value="' + (feed.fill||def.fill) + '"' +
             ' oninput="feeds['+i+'].fill=this.value;saveFeeds()"></div>' +
-            '<div class="col-auto">' +
-            '<button type="button" class="btn btn-sm btn-outline-danger"' +
-            ' onclick="removeFeed('+i+')">✕</button></div></div>';
+            '<button type="button" class="remove-btn" onclick="removeFeed('+i+')">X</button>' +
+            '</div>';
         c.appendChild(row);
     });
     saveFeeds();
 }
 function addFeed() {
-    var i   = feeds.length;
+    var i = feeds.length;
     var def = DEFAULT_FEED_COLORS[i % DEFAULT_FEED_COLORS.length];
     feeds.push({url:'', name:'Calendar '+(i+1), border:def.border, fill:def.fill});
     renderFeeds();
@@ -256,102 +179,65 @@ function saveFeeds() {
     document.getElementById('ical_url').value = feeds.length ? (feeds[0].url||'') : '';
 }
 
-/* ═══ Image slideshow ══════════════════════════════════════════════════
-   Images stored as individual form fields: image_0, image_1, image_2, ...
-   This mirrors the InkyPi image_upload plugin convention exactly.
-   Each field holds a base64 data-URI string.
+/* ═══ Image slideshow files — mirrors image_upload plugin exactly ═════
+   InkyPi's plugin.html defines a global `uploadedFiles` object.
+   On form submit it appends uploadedFiles["imageFiles[]"] as real
+   multipart file parts. The server saves them to disk and stores paths.
+   We just need to manage the display list and keep uploadedFiles in sync.
 ═══════════════════════════════════════════════════════════════════════ */
-var slideImages = [];   // array of base64 data-URI strings
+function addSlideFiles() {
+    var fileInput  = document.getElementById('imageUpload');
+    var listDiv    = document.getElementById('slideFileNames');
+    var files      = Array.from(fileInput.files);
 
-function rebuildImageFields() {
-    /* Re-create one hidden <input name="image_N"> per image */
-    var container = document.getElementById('slide_fields');
-    container.innerHTML = '';
-    slideImages.forEach(function(dataUri, i) {
-        var inp = document.createElement('input');
-        inp.type  = 'hidden';
-        inp.name  = 'image_' + i;
-        inp.id    = 'image_' + i;
-        inp.value = dataUri;
-        container.appendChild(inp);
-    });
-}
-
-function renderThumbs() {
-    var container = document.getElementById('slide_thumbs');
-    container.innerHTML = '';
-    slideImages.forEach(function(dataUri, i) {
-        var wrap = document.createElement('div');
-        wrap.style.cssText = 'position:relative;display:inline-block';
-
-        var img = document.createElement('img');
-        img.src = dataUri;
-        img.style.cssText = 'width:80px;height:60px;object-fit:cover;' +
-                            'border-radius:4px;border:1px solid #ccc';
-        img.title = 'Image ' + (i + 1);
-
-        var num = document.createElement('div');
-        num.textContent = i + 1;
-        num.style.cssText = 'position:absolute;bottom:2px;left:4px;font-size:10px;' +
-                            'color:#fff;text-shadow:0 0 2px #000';
-
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = '✕';
-        btn.style.cssText = 'position:absolute;top:2px;right:2px;padding:0 4px;' +
-                            'font-size:11px;line-height:16px;background:rgba(220,53,69,0.85);' +
-                            'color:#fff;border:none;border-radius:3px;cursor:pointer';
-        btn.onclick = (function(idx) { return function() { removeSlide(idx); }; })(i);
-
-        wrap.appendChild(img);
-        wrap.appendChild(num);
-        wrap.appendChild(btn);
-        container.appendChild(wrap);
-    });
-
-    document.getElementById('slide_count_label').textContent =
-        slideImages.length + ' image' + (slideImages.length !== 1 ? 's' : '');
-
-    rebuildImageFields();
-}
-
-function onFilesSelected(files) {
-    var arr = Array.from(files);
-    function readNext() {
-        if (!arr.length) { renderThumbs(); return; }
-        var file   = arr.shift();
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            slideImages.push(e.target.result);
-            readNext();
-        };
-        reader.readAsDataURL(file);
+    if (!uploadedFiles['imageFiles[]']) {
+        uploadedFiles['imageFiles[]'] = [];
     }
-    readNext();
-    /* reset so same file can be re-selected if needed */
-    document.getElementById('slide_file_input').value = '';
+
+    files.forEach(function(file) {
+        var name = file.name;
+        // Prevent duplicates
+        if (!uploadedFiles['imageFiles[]'].some(function(f){ return f.name === name; })) {
+            uploadedFiles['imageFiles[]'].push(file);
+
+            var el = document.createElement('div');
+            el.id = 'added-' + name;
+            el.className = 'file-name';
+            el.setAttribute('delete-on-submit', '');
+            el.innerHTML = '<span id="fileNameText">' + name + '</span>' +
+                '<button type="button" class="remove-btn" onclick="removeSlideAdded(\'' + name + '\')">X</button>';
+            listDiv.appendChild(el);
+        }
+    });
+    fileInput.value = '';
 }
 
-function removeSlide(i) { slideImages.splice(i, 1); renderThumbs(); }
+function removeSlideAdded(name) {
+    uploadedFiles['imageFiles[]'] = (uploadedFiles['imageFiles[]'] || []).filter(function(f){ return f.name !== name; });
+    var el = document.getElementById('added-' + name);
+    if (el) el.remove();
+}
 
-/* ═══ Misc helpers ═════════════════════════════════════════════════════ */
+function removeSlideExisting(name) {
+    var el1 = document.getElementById('existing-slide-' + name);
+    var el2 = document.getElementById('hidden-slide-' + name);
+    if (el1) el1.remove();
+    if (el2) el2.remove();
+}
+
+/* ═══ Helpers ══════════════════════════════════════════════════════════ */
 function esc(s) {
     return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')
                   .replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-function updateCalStyle() {
-    var v = document.getElementById('cal_style').value;
-    document.getElementById('agenda_days_col').style.display = v==='agenda' ? '' : 'none';
-}
-document.getElementById('cal_style').addEventListener('change', updateCalStyle);
 
 /* ═══ Prepopulate on load ══════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function() {
     if (loadPluginSettings) {
         /* selects */
-        if (pluginSettings.cal_style)   document.getElementById('cal_style').value   = pluginSettings.cal_style;
-        if (pluginSettings.language)    document.getElementById('language').value    = pluginSettings.language;
-        if (pluginSettings.agenda_days) document.getElementById('agenda_days').value = pluginSettings.agenda_days;
+        if (pluginSettings.cal_style)    document.getElementById('cal_style').value    = pluginSettings.cal_style;
+        if (pluginSettings.language)     document.getElementById('language').value     = pluginSettings.language;
+        if (pluginSettings.agenda_days)  document.getElementById('agenda_days').value  = pluginSettings.agenda_days;
 
         /* font size */
         var fs = pluginSettings.font_size || '14';
@@ -364,11 +250,12 @@ document.addEventListener('DOMContentLoaded', function() {
         updateSplitLabel(pct);
 
         /* colours */
-        var colorDefaults = {cal_bg:'#FFFFFF', cal_text:'#000000',
-            cal_header_bg:'#000000', cal_header_text:'#FFFFFF',
-            image_bg:'#000000', divider_color:'#000000'};
-        COLOR_FIELDS.forEach(function(id) {
-            setColor(id, pluginSettings[id] || colorDefaults[id]);
+        var defaults = {cal_bg:'#FFFFFF', cal_text:'#000000',
+                        cal_header_bg:'#000000', cal_header_text:'#FFFFFF',
+                        image_bg:'#000000', divider_color:'#000000'};
+        Object.keys(defaults).forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = pluginSettings[id] || defaults[id];
         });
 
         /* calendar feeds */
@@ -386,19 +273,33 @@ document.addEventListener('DOMContentLoaded', function() {
                         fill:DEFAULT_FEED_COLORS[0].fill});
         if (!feeds.length) addFeed(); else renderFeeds();
 
-        /* images — read image_0, image_1, ... from pluginSettings */
-        slideImages = [];
-        var i = 0;
-        while (true) {
-            var val = pluginSettings['image_' + i];
-            if (!val) break;
-            slideImages.push(val);
-            i++;
-        }
-        renderThumbs();
+        /* existing uploaded images — show filenames + hidden inputs with saved paths */
+        var existingFiles = pluginSettings['imageFiles[]'] || [];
+        if (!Array.isArray(existingFiles)) existingFiles = [existingFiles];
+        var listDiv    = document.getElementById('slideFileNames');
+        var hiddenDiv  = document.getElementById('slideHiddenInputs');
+
+        existingFiles.forEach(function(filePath) {
+            var name = filePath.split('/').pop();
+
+            var el = document.createElement('div');
+            el.id = 'existing-slide-' + name;
+            el.className = 'file-name';
+            el.setAttribute('delete-on-submit', '');
+            el.innerHTML = '<span id="fileNameText">' + name + '</span>' +
+                '<button type="button" class="remove-btn" onclick="removeSlideExisting(\'' + name + '\')">X</button>';
+            listDiv.appendChild(el);
+
+            var inp = document.createElement('input');
+            inp.type  = 'hidden';
+            inp.name  = 'imageFiles[]';
+            inp.value = filePath;
+            inp.id    = 'hidden-slide-' + name;
+            inp.setAttribute('delete-on-submit', '');
+            hiddenDiv.appendChild(inp);
+        });
     } else {
         addFeed();
-        renderThumbs();
     }
     updateCalStyle();
 });

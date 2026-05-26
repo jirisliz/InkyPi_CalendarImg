@@ -1,8 +1,6 @@
 import json
 import logging
 import os
-import base64
-from io import BytesIO
 from datetime import datetime, date, timedelta
 
 import requests
@@ -47,7 +45,7 @@ class CalendarImgPlugin(BasePlugin):
     Right: image slideshow — images uploaded via the settings form, cycles on each refresh.
     Split ratio configurable as a percentage.
     Images are stored using the same image_N key convention as InkyPi's built-in
-    image_upload plugin: image_0, image_1, image_2, ... as base64 data-URIs.
+    image_upload plugin: files uploaded as multipart, stored as paths in imageFiles[].
     """
 
     # ------------------------------------------------------------------ #
@@ -223,36 +221,33 @@ class CalendarImgPlugin(BasePlugin):
 
     # ------------------------------------------------------------------ #
     #  Image slideshow                                                     #
-    #  Mirrors InkyPi image_upload plugin: one settings key per image     #
-    #  image_0 = "data:image/jpeg;base64,..."                             #
-    #  image_1 = "data:image/jpeg;base64,..."  etc.                       #
+    #  Uses exactly the same mechanism as InkyPi's image_upload plugin:   #
+    #  Files are uploaded as multipart, saved to disk by InkyPi's backend #
+    #  and stored as file paths in settings["imageFiles[]"].              #
     # ------------------------------------------------------------------ #
 
     def _collect_images(self, settings):
         """
-        Read image_0, image_1, image_2, ... from settings until a key is missing.
-        Returns a list of base64 data-URI strings.
+        Read imageFiles[] from settings — a list of file paths saved by
+        InkyPi's handle_request_files() utility, e.g.:
+          ["/usr/local/inkypi/src/static/images/saved/photo.jpg", ...]
+        Returns the list (may be a single string if only one file).
         """
-        images = []
-        i = 0
-        while True:
-            val = settings.get(f"image_{i}", "")
-            if not val:
-                break
-            images.append(val)
-            i += 1
-        logger.info(f"[calendar_img] {len(images)} slide image(s) loaded")
-        return images
+        files = settings.get("imageFiles[]", [])
+        if isinstance(files, str):
+            files = [files]
+        logger.info(f"[calendar_img] {len(files)} slide image(s) found")
+        return files
 
-    def _next_slide(self, images, width, height, bg_color):
+    def _next_slide(self, image_paths, width, height, bg_color):
         """
-        Pick the next image using a persistent .slide_index counter.
-        Decodes the base64 data-URI and fits the image into the panel.
-        Returns a PIL Image of exactly (width, height).
+        Pick the next image from the file-path list using a persistent
+        .slide_index counter. Opens the file from disk and fits it into
+        the panel. Returns a PIL Image of exactly (width, height).
         """
         blank = Image.new("RGB", (width, height), bg_color)
 
-        if not images:
+        if not image_paths:
             draw = ImageDraw.Draw(blank)
             try:
                 font_dir = os.path.join(os.path.dirname(__file__),
@@ -266,6 +261,7 @@ class CalendarImgPlugin(BasePlugin):
                       fill=(180, 180, 180), anchor="mm")
             return blank
 
+        # Persistent slide index stored next to the plugin file
         state_path = os.path.join(os.path.dirname(__file__), ".slide_index")
         try:
             with open(state_path) as f:
@@ -273,8 +269,8 @@ class CalendarImgPlugin(BasePlugin):
         except Exception:
             idx = 0
 
-        idx      = idx % len(images)
-        next_idx = (idx + 1) % len(images)
+        idx      = idx % len(image_paths)
+        next_idx = (idx + 1) % len(image_paths)
 
         try:
             with open(state_path, "w") as f:
@@ -282,18 +278,16 @@ class CalendarImgPlugin(BasePlugin):
         except Exception as e:
             logger.warning(f"[calendar_img] Could not save slide index: {e}")
 
-        logger.info(f"[calendar_img] Showing slide {idx + 1}/{len(images)}")
+        path = image_paths[idx]
+        logger.info(f"[calendar_img] Showing slide {idx + 1}/{len(image_paths)}: {path}")
 
         try:
-            data_uri = images[idx]
-            _, b64data = data_uri.split(",", 1)
-            raw = base64.b64decode(b64data)
-            img = Image.open(BytesIO(raw)).convert("RGB")
+            img = Image.open(path).convert("RGB")
         except Exception as e:
-            logger.warning(f"[calendar_img] Could not decode image {idx}: {e}")
+            logger.warning(f"[calendar_img] Could not open image {path}: {e}")
             draw = ImageDraw.Draw(blank)
             draw.text((width // 2, height // 2),
-                      "Image decode failed", fill=(200, 80, 80), anchor="mm")
+                      "Image load failed", fill=(200, 80, 80), anchor="mm")
             return blank
 
         # Fit preserving aspect ratio; letterbox with bg_color
